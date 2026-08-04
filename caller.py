@@ -254,7 +254,7 @@ class EKABTopRow(QWidget):
         addr_grid.addWidget(self.number_input, 1, 2)
         self.floor_combo = QComboBox()
         self.floor_combo.addItems(["","ΥΠΟΓΕΙΟ", "ΙΣΟΓΕΙΟ","ΗΜΙΟΡΟΦΟΣ", "1ος", "2ος", "3ος", "4ος", "5ος", "6ος"])
-        self.floor_combo.setMaximumWidth(250)
+        self.floor_combo.setMaximumWidth(100)
         addr_grid.addWidget(self.floor_combo, 1, 3)
         self.bell_input = QLineEdit()
         self.bell_input.setFixedWidth(200)
@@ -347,7 +347,7 @@ class EKABTopRow(QWidget):
         icu_group.setLayout(icu_grid)
         self.pickup_stack.addWidget(icu_group)
 
-# ------------------------------------------
+        # ------------------------------------------
         # --- PAGE 3: Airport or port Group (ΑΕΡΟΔΡΟΜΙΟ ΛΙΜΑΝΙ) ---
         # ------------------------------------------
         ports_group = QGroupBox("ΣΤΟΙΧΕΙΑ ΠΑΡΑΛΑΒΗΣ (ΑΕΡΟΔΡΟΜΙΟ / ΛΙΜΑΝΙ)")
@@ -412,6 +412,167 @@ class EKABTopRow(QWidget):
         
         # 1. Add the stack WITHOUT the 'AlignLeft' restriction so it can stretch and center!
         main_layout.addWidget(self.pickup_stack)
+
+       # ==========================================
+        # SECTION: ΔΗΜΟΓΡΑΦΙΚΑ ΣΤΟΙΧΕΙΑ (Demographics)
+        # ==========================================
+        demo_group = QGroupBox("ΔΗΜΟΓΡΑΦΙΚΑ ΣΤΟΙΧΕΙΑ")
+        demo_group.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        demo_group.setStyleSheet("QGroupBox { font-weight: bold; color: #333333; margin-top: 10px; }")
+        
+        # We will use a Vertical Layout for the box, and put a Grid + Horizontal Layouts inside it
+        demo_layout = QVBoxLayout()
+        demo_layout.setContentsMargins(10, 10, 10, 10)
+        demo_layout.setSpacing(8)
+
+        # --- ROWS 0 & 1: Names, Age, Newborn (Using a Grid) ---
+        demo_grid = QGridLayout()
+        demo_grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        demo_grid.setContentsMargins(0, 0, 0, 0)
+        
+        # Row 0: Labels
+        eponymo_layout = QHBoxLayout()
+        eponymo_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        eponymo_layout.setContentsMargins(0, 0, 0, 0)
+        eponymo_layout.addWidget(QLabel("ΕΠΩΝΥΜΟ"))
+        
+        self.contact_btn = QPushButton("📇") # Small icon next to Last Name
+        self.contact_btn.setFixedWidth(24)
+        eponymo_layout.addWidget(self.contact_btn)
+        
+        demo_grid.addLayout(eponymo_layout, 0, 0)
+        demo_grid.addWidget(QLabel("ΟΝΟΜΑ"), 0, 1)
+        demo_grid.addWidget(QLabel("ΗΛΙΚΙΑ"), 0, 2)
+        demo_grid.addWidget(QLabel("ΝΕΟΓΝΟ"), 0, 3, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Row 1: Inputs
+        self.last_name_input = QLineEdit()
+        self.last_name_input.setFixedWidth(200)
+        demo_grid.addWidget(self.last_name_input, 1, 0)
+        
+        self.first_name_input = QLineEdit()
+        self.first_name_input.setFixedWidth(200)
+        demo_grid.addWidget(self.first_name_input, 1, 1)
+
+        # Age layout (Box + Comma + Dropdown)
+        age_layout = QHBoxLayout()
+        age_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        age_layout.setContentsMargins(0, 0, 0, 0)
+        self.age_input = QLineEdit()
+        self.age_input.setFixedWidth(40)
+        age_layout.addWidget(self.age_input)
+        age_layout.addWidget(QLabel(""))
+        self.age_unit_combo = QComboBox()
+        self.age_unit_combo.addItems(["ΕΤΩΝ", "ΜΗΝΩΝ", "ΗΜΕΡΩΝ"]) # Ετών, Μηνών, Ημερών
+        self.age_unit_combo.setFixedWidth(80)
+        age_layout.addWidget(self.age_unit_combo)
+        
+        demo_grid.addLayout(age_layout, 1, 2)
+        
+        self.newborn_check = QCheckBox()
+        demo_grid.addWidget(self.newborn_check, 1, 3, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # --> THIS IS THE MAGIC SPRING: It pushes columns 0, 1, 2, and 3 tightly to the left!
+        demo_grid.setColumnStretch(4, 1)
+
+        # Add the grid to the main Demographics layout
+        demo_layout.addLayout(demo_grid)
+
+        # --- ROW 2: Unknown & Gender ---
+        row2_demo = QHBoxLayout()
+        row2_demo.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        row2_demo.setContentsMargins(0, 5, 0, 0) 
+        
+        row2_demo.addWidget(QLabel("ΑΓΝΩΣΤΟΣ"))
+        self.unknown_patient_check = QCheckBox()
+        row2_demo.addWidget(self.unknown_patient_check)
+        
+        row2_demo.addSpacing(20)
+        
+        row2_demo.addWidget(QLabel("ΦΥΛΟ"))
+        self.radio_male = QRadioButton("ΑΝΔΡΑΣ")
+        self.radio_female = QRadioButton("ΓΥΝΑΙΚΑ")
+        row2_demo.addWidget(self.radio_male)
+        row2_demo.addWidget(self.radio_female)
+        
+        row2_demo.addStretch()
+        demo_layout.addLayout(row2_demo)
+
+        # --- ROW 3: Insurance ---
+        row3_demo = QHBoxLayout()
+        row3_demo.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        row3_demo.setContentsMargins(0, 5, 0, 0)
+        
+        row3_demo.addWidget(QLabel("ΑΣΦΑΛΙΣΤΙΚΟΣ ΦΟΡΕΑΣ"))
+        self.insurance_combo = QComboBox()
+        self.insurance_combo.addItems(["", "ΕΟΠΥΥ", "ΑΝΑΣΦΑΛΙΣΤΟΣ", "ΙΔΙΩΤΙΚΗ", "ΕΥΡΩΠΑΪΚΗ ΚΑΡΤΑ"])
+        self.insurance_combo.setFixedWidth(200)
+        row3_demo.addWidget(self.insurance_combo)
+        row3_demo.addStretch()
+        
+        demo_layout.addLayout(row3_demo)
+        
+        # -> Apply layout to GroupBox and add to main window!
+        demo_group.setLayout(demo_layout)
+        main_layout.addWidget(demo_group)
+
+        # ==========================================
+        # SECTION: ΣΤΟΙΧΕΙΑ ΕΠΙΚΟΙΝΩΝΙΑΣ (Contact Details)
+        # ==========================================
+        contact_group = QGroupBox("ΣΤΟΙΧΕΙΑ ΕΠΙΚΟΙΝΩΝΙΑΣ")
+        contact_group.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        contact_group.setStyleSheet("QGroupBox { font-weight: bold; color: #333333; margin-top: 10px; }")
+        
+        contact_grid = QGridLayout()
+        contact_grid.setContentsMargins(10, 10, 10, 10)
+        contact_grid.setSpacing(5) # Keeps the rows packed tightly together
+        contact_grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+        # --- ROW 0: Top Labels ---
+        contact_grid.addWidget(QLabel("ΤΗΛΕΦΩΝΑ"), 0, 0)
+        contact_grid.addWidget(QLabel("ΚΛΗΣΗ ΑΠΟ"), 0, 1)
+
+        # --- ROW 1: Phone 1 & Call From Dropdown ---
+        self.phone_1_input = QLineEdit()
+        self.phone_1_input.setFixedWidth(200)
+        contact_grid.addWidget(self.phone_1_input, 1, 0)
+        
+        self.call_from_combo = QComboBox()
+        self.call_from_combo.addItems(["", "ΑΣΘΕΝΗΣ", "ΣΥΓΓΕΝΗΣ", "ΙΑΤΡΟΣ", "ΑΣΤΥΝΟΜΙΑ", "ΠΥΡΟΣΒΕΣΤΙΚΗ", "ΑΛΛΟ"])
+        self.call_from_combo.setFixedWidth(250)
+        contact_grid.addWidget(self.call_from_combo, 1, 1)
+
+        # --- ROW 2: Phone 2 & Caller Details Label ---
+        self.phone_2_input = QLineEdit()
+        self.phone_2_input.setFixedWidth(200)
+        contact_grid.addWidget(self.phone_2_input, 2, 0)
+        
+        # Pushed to the bottom of the cell so it hugs the input box below it
+        contact_grid.addWidget(QLabel("ΣΤΟΙΧΕΙΑ ΚΑΛΟΥΝΤΑ"), 2, 1, alignment=Qt.AlignmentFlag.AlignBottom) 
+
+        # --- ROW 3: Phone 3 & Caller Details Input ---
+        self.phone_3_input = QLineEdit()
+        self.phone_3_input.setFixedWidth(200)
+        contact_grid.addWidget(self.phone_3_input, 3, 0)
+        
+        self.caller_info_input = QLineEdit()
+        self.caller_info_input.setFixedWidth(250)
+        contact_grid.addWidget(self.caller_info_input, 3, 1)
+        
+        # -> Apply grid to GroupBox and add to main window
+        contact_group.setLayout(contact_grid)
+        main_layout.addWidget(contact_group)
+        
+        # ------------------------------------------
+        # --- FINALIZE LAYOUT (These should be your final lines of setup_ui) ---
+        # ------------------------------------------
+        # main_layout.addStretch()
+        # self.setLayout(main_layout)
+
+        
+        # ------------------------------------------
+        # --- FINALIZE LAYOUT (These should be your final 2 lines of setup_ui) ---
+        # ------------------------------------------
 
         # END OF SETUP_UI
         main_layout.addStretch()
