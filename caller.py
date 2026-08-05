@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QGridLayout, QRadioButton, QDateTimeEdit, QGroupBox,
     QStackedWidget,QTextEdit,QScrollArea
 )
-from PyQt6.QtCore import Qt, QDateTime
+from PyQt6.QtCore import Qt, QDateTime,QObject, QEvent
 
 # --- SQLAlchemy Imports ---
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Date, Time
@@ -18,6 +18,18 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 # ==========================================
 
 Base = declarative_base()
+
+class TimeFieldFilter(QObject):
+    def eventFilter(self, obj, event):
+        # Check if the user clicked the mouse on the text box
+        if event.type() == QEvent.Type.MouseButtonPress:
+            # If the box still shows "00:00" or is empty, insert the current time
+            if obj.text() == "00:00" or obj.text() == "":
+                current_time = QDateTime.currentDateTime().toString("HH:mm")
+                obj.setText(current_time)
+                obj.selectAll() # Highlights the text for easy editing
+            return True
+        return super().eventFilter(obj, event)
 
 class DispatchCall(Base):
     __tablename__ = 'dispatch_calls'
@@ -1105,6 +1117,78 @@ class EKABTopRow(QWidget):
         action_btn_layout.addWidget(self.btn_send)
         
         right_layout.addLayout(action_btn_layout)
+
+
+        # Instantiate the click filter
+        self.time_filter = TimeFieldFilter()
+        
+        # Gather all your timing QLineEdits into a list
+        time_fields = [
+            self.dispatch_time,
+            self.time_diavivasi,
+            self.time_afixi_pro,
+            self.time_afixi_sym,
+            self.time_telos,
+            self.time_anaxorisi
+        ]
+        
+        # Apply the filter to every timing box automatically
+        for field in time_fields:
+            field.installEventFilter(self.time_filter)
+
+        # ==========================================
+        # INTERACTIVITY: Cancellation Toggles
+        # ==========================================
+
+        # 1. LEFT SIDE: Cancel En Route
+        self.cancel_reason_input.setEnabled(False)
+
+        def toggle_left_cancel(checked):
+            self.cancel_reason_input.setEnabled(checked)
+            if not checked:
+                self.cancel_reason_input.clear() # Clears text if unchecked
+
+        self.cancel_en_route_check.toggled.connect(toggle_left_cancel)
+
+        # 2. RIGHT SIDE: Disable cancellation fields by default
+        self.cancel_reasons_combo.setEnabled(False)
+        self.cancel_comments_input.setEnabled(False)
+        self.cancel_name_input.setEnabled(False)
+        self.cancel_surname_input.setEnabled(False)
+
+        # Make the ΗΜ/ΝΙΑ ΑΚΥΡΩΣΗΣ box start "blank"
+        self.time_akyrosi.setMinimumDateTime(QDateTime(2000, 1, 1, 0, 0)) # A safe past date
+        self.time_akyrosi.setSpecialValueText(" ") # Displays as empty when at the minimum date
+        self.time_akyrosi.setDateTime(self.time_akyrosi.minimumDateTime())
+
+        # 3. Function to unlock fields when time is stamped
+        def unlock_right_cancel(new_datetime):
+            # If a real date is selected (not the blank year 2000), enable fields!
+            if new_datetime.date().year() > 2000:
+                self.cancel_reasons_combo.setEnabled(True)
+                self.cancel_comments_input.setEnabled(True)
+                self.cancel_name_input.setEnabled(True)
+                self.cancel_surname_input.setEnabled(True)
+            else:
+                self.cancel_reasons_combo.setEnabled(False)
+                self.cancel_comments_input.setEnabled(False)
+                self.cancel_name_input.setEnabled(False)
+                self.cancel_surname_input.setEnabled(False)
+
+        # Connect the date/time box to the unlock function
+        self.time_akyrosi.dateTimeChanged.connect(unlock_right_cancel)
+
+        # 4. Filter to instantly stamp the CURRENT time when clicked!
+        class AkyrosiClickFilter(QObject):
+            def eventFilter(self, obj, event):
+                # If the user clicks or tabs into the empty box, fill it with NOW
+                if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.FocusIn):
+                    if obj.dateTime() == obj.minimumDateTime():
+                        obj.setDateTime(QDateTime.currentDateTime())
+                return super().eventFilter(obj, event)
+
+        self.akyrosi_click_filter = AkyrosiClickFilter()
+        self.time_akyrosi.installEventFilter(self.akyrosi_click_filter)
 
 
 
