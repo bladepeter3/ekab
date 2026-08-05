@@ -120,7 +120,7 @@ class EKABTopRow(QWidget):
         window_layout = QVBoxLayout(self)
         window_layout.setContentsMargins(0, 0, 0, 0) # No borders around the scroll bar
 
-        # 2. Create the Scroll Area
+# 2. Create the Scroll Area
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True) # IMPORTANT: Lets the inner canvas expand!
         scroll_area.setStyleSheet("QScrollArea { border: none; }")
@@ -128,11 +128,25 @@ class EKABTopRow(QWidget):
         # 3. Create the "Canvas" widget that will hold all your UI elements
         scroll_content = QWidget()
         
-        # 4. Bind your main_layout to the Canvas instead of the window
-        main_layout = QVBoxLayout(scroll_content)
+        # 4. Master Horizontal Layout to hold Left and Right sides side-by-side
+        master_layout = QHBoxLayout(scroll_content)
+        master_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        master_layout.setContentsMargins(10, 10, 10, 10)
+        master_layout.setSpacing(20)
+
+        # 5. Left Side Layout (We keep the name 'main_layout' so your existing code works perfectly!)
+        main_layout = QVBoxLayout()
         main_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(12)
+        
+        # 6. Right Side Layout (This is where our new right-side stuff will go)
+        right_layout = QVBoxLayout()
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        right_layout.setSpacing(12)
+
+        # Add both columns to the master horizontal layout
+        master_layout.addLayout(main_layout)
+        master_layout.addLayout(right_layout)
         
         grid = QGridLayout()
         grid.setSpacing(5) 
@@ -733,6 +747,366 @@ class EKABTopRow(QWidget):
         notes_layout.addWidget(self.notes_input)
         
         main_layout.addLayout(notes_layout)
+
+
+        # ==========================================
+        # SECTION: RIGHT SIDE - ΠΑΡΑΛΑΒΗ ΔΙΑΒΙΒΑΣΤΗΣ
+        # ==========================================
+        
+        # 1. The Label on top
+        right_layout.addWidget(QLabel("ΠΑΡΑΛΑΒΗ ΔΙΑΒΙΒΑΣΤΗΣ"))
+        
+        # 2. The row with the time, text box, and buttons
+        dispatch_row = QHBoxLayout()
+        dispatch_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        # Time input (shows 00:00)
+        self.dispatch_time = QLineEdit("00:00")
+        self.dispatch_time.setFixedWidth(50)
+        self.dispatch_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dispatch_row.addWidget(self.dispatch_time)
+        
+        # Wide text input
+        self.dispatch_name = QLineEdit()
+        self.dispatch_name.setFixedWidth(250) 
+        dispatch_row.addWidget(self.dispatch_name)
+        
+        # Icon Buttons (Using text/emojis as placeholders for the document icons)
+        self.btn_doc1 = QPushButton("📄")
+        self.btn_doc1.setFixedWidth(30)
+        dispatch_row.addWidget(self.btn_doc1)
+        
+        self.btn_doc2 = QPushButton("📋")
+        self.btn_doc2.setFixedWidth(30)
+        dispatch_row.addWidget(self.btn_doc2)
+        
+        dispatch_row.addStretch()
+        right_layout.addLayout(dispatch_row)
+
+
+        # ==========================================
+        # SECTION: AMBULANCE TAB (Νέο Ασθενοφόρο)
+        # ==========================================
+        
+        # 1. Create the Tab Widget
+        self.ambulance_tabs = QTabWidget()
+        
+        # Create the main page (widget) for this tab
+        amb_tab = QWidget()
+        amb_layout = QVBoxLayout(amb_tab)
+        amb_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        
+        # --- ROW 1: Ambulance Code & Position ---
+        code_pos_layout = QHBoxLayout()
+        
+        # Left: Ambulance Code
+        code_layout = QVBoxLayout()
+        code_label = QLabel("ΚΩΔ. ΑΣΘΕΝΟΦΟΡΟΥ")
+        code_label.setStyleSheet("color: #A0A0A0;") # Light grey text to match image
+        code_layout.addWidget(code_label)
+        
+        self.amb_code_combo = QComboBox()
+        self.amb_code_combo.setFixedWidth(200)
+        code_layout.addWidget(self.amb_code_combo)
+        
+        # Right: Position
+        pos_layout = QVBoxLayout()
+        pos_label = QLabel("ΘΕΣΗ")
+        pos_label.setStyleSheet("color: #A0A0A0;")
+        pos_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pos_layout.addWidget(pos_label)
+        
+        self.amb_pos_input = QLineEdit()
+        self.amb_pos_input.setFixedWidth(100)
+        pos_layout.addWidget(self.amb_pos_input)
+        
+        code_pos_layout.addLayout(code_layout)
+        code_pos_layout.addLayout(pos_layout)
+        code_pos_layout.addStretch()
+        
+        amb_layout.addLayout(code_pos_layout)
+        amb_layout.addSpacing(10)
+
+        # --- ROW 2: The Timing Grid (00:00) ---
+        timing_grid = QGridLayout()
+        timing_grid.setSpacing(8)
+        
+        # Helper styles to match the image
+        grey_label_style = "color: #A0A0A0; font-size: 10px;"
+        time_input_style = "font-size: 14px; font-weight: bold; background-color: #E8E8E8; border: 1px solid #000;"
+
+        # Column 0 & 1: ΔΙΑΒΙΒΑΣΗ
+        lbl_diavivasi = QLabel("ΔΙΑΒΙΒΑΣΗ")
+        lbl_diavivasi.setStyleSheet(grey_label_style)
+        timing_grid.addWidget(lbl_diavivasi, 0, 0, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        self.time_diavivasi = QLineEdit("00:00")
+        self.time_diavivasi.setStyleSheet(time_input_style)
+        self.time_diavivasi.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_diavivasi.setFixedSize(80, 30)
+        timing_grid.addWidget(self.time_diavivasi, 0, 1)
+
+        # Column 2 & 3: ΑΦΙΞΗ ΣΤΟΝ ΠΡΟΟΡΙΣΜΟ
+        lbl_afixi_pro = QLabel("ΑΦΙΞΗ ΣΤΟΝ\nΠΡΟΟΡΙΣΜΟ")
+        lbl_afixi_pro.setStyleSheet(grey_label_style)
+        timing_grid.addWidget(lbl_afixi_pro, 0, 2, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        self.time_afixi_pro = QLineEdit("00:00")
+        self.time_afixi_pro.setStyleSheet(time_input_style)
+        self.time_afixi_pro.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_afixi_pro.setFixedSize(80, 30)
+        timing_grid.addWidget(self.time_afixi_pro, 0, 3)
+
+        # Column 0 & 1 (Row 2): ΑΦΙΞΗ ΣΤΟ ΣΥΜΒΑΝ
+        lbl_afixi_sym = QLabel("ΑΦΙΞΗ ΣΤΟ\nΣΥΜΒΑΝ")
+        lbl_afixi_sym.setStyleSheet(grey_label_style)
+        timing_grid.addWidget(lbl_afixi_sym, 1, 0, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        self.time_afixi_sym = QLineEdit("00:00")
+        self.time_afixi_sym.setStyleSheet(time_input_style)
+        self.time_afixi_sym.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_afixi_sym.setFixedSize(80, 30)
+        timing_grid.addWidget(self.time_afixi_sym, 1, 1)
+
+        # Column 2 & 3 (Row 2): ΤΕΛΟΣ
+        lbl_telos = QLabel("ΤΕΛΟΣ")
+        lbl_telos.setStyleSheet(grey_label_style)
+        timing_grid.addWidget(lbl_telos, 1, 2, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        self.time_telos = QLineEdit("00:00")
+        self.time_telos.setStyleSheet(time_input_style)
+        self.time_telos.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_telos.setFixedSize(80, 30)
+        timing_grid.addWidget(self.time_telos, 1, 3)
+
+        # Column 0 & 1 (Row 3): ΑΝΑΧΩΡΗΣΗ ΑΠΟ ΣΥΜΒΑΝ
+        lbl_anaxorisi = QLabel("ΑΝΑΧΩΡΗΣΗ\nΑΠΟ ΣΥΜΒΑΝ")
+        lbl_anaxorisi.setStyleSheet(grey_label_style)
+        timing_grid.addWidget(lbl_anaxorisi, 2, 0, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        self.time_anaxorisi = QLineEdit("00:00")
+        self.time_anaxorisi.setStyleSheet(time_input_style)
+        self.time_anaxorisi.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_anaxorisi.setFixedSize(80, 30)
+        timing_grid.addWidget(self.time_anaxorisi, 2, 1)
+
+# Column 2 & 3 (Row 3): ΗΜ/ΝΙΑ ΑΚΥΡΩΣΗΣ
+        lbl_akyrosi = QLabel("ΗΜ/ΝΙΑ\nΑΚΥΡΩΣΗΣ")
+        lbl_akyrosi.setStyleSheet(grey_label_style)
+        timing_grid.addWidget(lbl_akyrosi, 2, 2, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        # Swapped to a QDateTimeEdit with a calendar popup
+        self.time_akyrosi = QDateTimeEdit()
+        self.time_akyrosi.setDisplayFormat("dd/MM/yyyy HH:mm")
+        self.time_akyrosi.setCalendarPopup(True)
+        self.time_akyrosi.setFixedWidth(150) # Made slightly wider to fit the dropdown arrow
+        self.time_akyrosi.setMinimumDateTime(QDateTime.currentDateTime()) # Defaults to current date/time
+        timing_grid.addWidget(self.time_akyrosi, 2, 3)
+
+        amb_layout.addLayout(timing_grid)
+
+        # ==========================================
+        # SECTION: CANCELLATION DETAILS
+        # ==========================================
+        
+        # --- Reasons for Cancellation ---
+        cancel_reasons_layout = QHBoxLayout()
+        lbl_cancel_reason = QLabel("*ΛΟΓΟΙ ΑΚΥΡΩΣΗΣ")
+        lbl_cancel_reason.setStyleSheet("color: #A0A0A0;") # Light grey
+        cancel_reasons_layout.addWidget(lbl_cancel_reason)
+        
+        self.cancel_reasons_combo = QComboBox()
+        cancel_reasons_layout.addWidget(self.cancel_reasons_combo)
+        amb_layout.addLayout(cancel_reasons_layout)
+
+        # --- Cancellation Comments ---
+        cancel_comments_layout = QHBoxLayout()
+        lbl_cancel_comments = QLabel("*ΣΧΟΛΙΑ ΑΚΥΡΩΣΗΣ")
+        lbl_cancel_comments.setStyleSheet("color: #A0A0A0;")
+        cancel_comments_layout.addWidget(lbl_cancel_comments)
+        
+        self.cancel_comments_input = QLineEdit()
+        cancel_comments_layout.addWidget(self.cancel_comments_input)
+        amb_layout.addLayout(cancel_comments_layout)
+
+        # --- Name and Surname ---
+        name_surname_layout = QHBoxLayout()
+        lbl_name = QLabel("ΟΝΟΜΑ")
+        lbl_name.setStyleSheet("color: #A0A0A0;")
+        name_surname_layout.addWidget(lbl_name)
+        
+        self.cancel_name_input = QLineEdit()
+        name_surname_layout.addWidget(self.cancel_name_input)
+        
+        lbl_surname = QLabel("ΕΠΩΝΥΜΟ")
+        lbl_surname.setStyleSheet("color: #A0A0A0;")
+        name_surname_layout.addWidget(lbl_surname)
+        
+        self.cancel_surname_input = QLineEdit()
+        name_surname_layout.addWidget(self.cancel_surname_input)
+        amb_layout.addLayout(name_surname_layout)
+
+        # ==========================================
+        # SECTION: DESTINATION & HOSPITAL (Red Text)
+        # ==========================================
+        
+        # --- Destination Radio Buttons ---
+        dest_layout = QHBoxLayout()
+        lbl_destination = QLabel("ΠΡΟΟΡΙΣΜΟΣ")
+        lbl_destination.setStyleSheet("color: #D32F2F; font-weight: bold;") # Distinct Red
+        dest_layout.addWidget(lbl_destination)
+
+        self.dest_hosp = QRadioButton("ΝΟΣ/ΜΕΙΟ")
+        self.dest_address = QRadioButton("Δ/ΝΣΗ")
+        self.dest_port = QRadioButton("ΛΙΜΑΝΙ ΑΕΡΟΔΡ.") 
+        self.dest_region = QRadioButton("ΠΕΡΙΦΕΡΕΙΑ")
+
+        dest_layout.addWidget(self.dest_hosp)
+        dest_layout.addWidget(self.dest_address)
+        dest_layout.addWidget(self.dest_port)
+        dest_layout.addWidget(self.dest_region)
+        dest_layout.addStretch()
+        amb_layout.addLayout(dest_layout)
+
+        # --- Hospital ---
+        hosp_layout = QHBoxLayout()
+        lbl_hospital = QLabel("*ΝΟΣΟΚΟΜΕΙΟ")
+        lbl_hospital.setStyleSheet("color: #D32F2F; font-weight: bold;")
+        hosp_layout.addWidget(lbl_hospital)
+        
+        self.hospital_combo = QComboBox()
+        hosp_layout.addWidget(self.hospital_combo)
+        amb_layout.addLayout(hosp_layout)
+
+        # --- Clinic ---
+        clinic_layout = QHBoxLayout()
+        lbl_clinic = QLabel("ΚΛΙΝΙΚΗ")
+        lbl_clinic.setStyleSheet("color: #D32F2F;")
+        clinic_layout.addWidget(lbl_clinic)
+        
+        self.clinic_combo = QComboBox()
+        clinic_layout.addWidget(self.clinic_combo)
+        amb_layout.addLayout(clinic_layout)
+
+
+# --- Reception Doctor ---
+        doc_recv_layout = QHBoxLayout()
+        lbl_doc_recv = QLabel("ΙΑΤΡΟΣ ΥΠΟΔΟΧΗΣ")
+        lbl_doc_recv.setStyleSheet("color: #D32F2F;")
+        doc_recv_layout.addWidget(lbl_doc_recv)
+        
+        self.recv_doctor_input = QLineEdit()
+        doc_recv_layout.addWidget(self.recv_doctor_input)
+        amb_layout.addLayout(doc_recv_layout)
+
+        # --- Crew Involvement & Sirens ---
+        emploki_layout = QHBoxLayout()
+        lbl_emploki = QLabel("ΕΜΠΛΟΚΗ ΦΟΡΕΩΝ")
+        lbl_emploki.setStyleSheet("color: #D32F2F;")
+        emploki_layout.addWidget(lbl_emploki)
+        
+        self.emploki_combo = QComboBox()
+        emploki_layout.addWidget(self.emploki_combo)
+        
+        self.siren_check = QCheckBox("ΧΡΗΣΗ ΣΕΙΡΗΝΑΣ")
+        self.siren_check.setStyleSheet("color: #D32F2F;")
+        emploki_layout.addWidget(self.siren_check)
+        amb_layout.addLayout(emploki_layout)
+
+        # --- Directives & First Aid ---
+        entoles_layout = QHBoxLayout()
+        lbl_entoles = QLabel("ΕΝΤΟΛΕΣ\nΣΥΝΤΟΝΙΣΜΟΣ")
+        lbl_entoles.setStyleSheet("color: #D32F2F;")
+        entoles_layout.addWidget(lbl_entoles)
+        
+        self.entoles_combo = QComboBox()
+        entoles_layout.addWidget(self.entoles_combo)
+        
+        self.first_aid_check = QCheckBox("ΟΔΗΓΙΕΣ Ε/Κ\nΑ' ΒΟΗΘΕΙΕΣ")
+        self.first_aid_check.setStyleSheet("color: #D32F2F;")
+        entoles_layout.addWidget(self.first_aid_check)
+        amb_layout.addLayout(entoles_layout)
+
+        # --- Vital Signs (BP, HR, SpO2, AVPU, SMS) ---
+        vitals_layout = QHBoxLayout()
+        vitals = ["BP", "HR", "SpO2", "AVPU", "SMS"]
+        self.vital_inputs = {}
+        
+        for v in vitals:
+            v_col = QVBoxLayout()
+            v_lbl = QLabel(v)
+            v_lbl.setStyleSheet("color: #D32F2F; font-weight: bold;")
+            v_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            v_col.addWidget(v_lbl)
+            
+            v_input = QLineEdit()
+            v_input.setFixedSize(40, 25)
+            v_col.addWidget(v_input)
+            
+            self.vital_inputs[v] = v_input
+            vitals_layout.addLayout(v_col)
+            
+        vitals_layout.addStretch()
+        amb_layout.addLayout(vitals_layout)
+
+        # --- Assessment & Crew Actions (Nested Tabs) ---
+        self.inner_tabs = QTabWidget()
+        
+        # Assessment Tab
+        ektimisi_tab = QWidget()
+        ekt_layout = QVBoxLayout(ektimisi_tab)
+        ekt_layout.setContentsMargins(0, 0, 0, 0)
+        self.ektimisi_input = QTextEdit()
+        self.ektimisi_input.setMaximumHeight(500)
+        ekt_layout.addWidget(self.ektimisi_input)
+        self.inner_tabs.addTab(ektimisi_tab, "ΕΚΤΙΜΗΣΗ")
+
+        # Actions Tab
+        energeies_tab = QWidget()
+        en_layout = QVBoxLayout(energeies_tab)
+        en_layout.setContentsMargins(0, 0, 0, 0)
+        self.energeies_input = QTextEdit()
+        self.energeies_input.setMaximumHeight(500)
+        en_layout.addWidget(self.energeies_input)
+        self.inner_tabs.addTab(energeies_tab, "ΕΝΕΡΓΕΙΕΣ ΠΛΗΡΩΜΑΤΟΣ")
+
+        amb_layout.addWidget(self.inner_tabs)
+
+        # --- Observations / Notes ---
+        lbl_paratiriseis = QLabel("ΠΑΡΑΤΗΡΗΣΕΙΣ")
+        lbl_paratiriseis.setStyleSheet("color: #A0A0A0;")
+        amb_layout.addWidget(lbl_paratiriseis)
+        
+        self.right_notes_input = QTextEdit()
+        self.right_notes_input.setMaximumHeight(50)
+        amb_layout.addWidget(self.right_notes_input)
+
+        # ==========================================
+        # FINALIZE TABS & ADD BOTTOM ACTION BUTTONS
+        # ==========================================
+        
+        # 1. Add the completed tab page to the Tab Widget
+        self.ambulance_tabs.addTab(amb_tab, "📄 Νέο Ασθενοφόρο") 
+        
+        # 2. Add the entire Tab Widget to the right layout
+        right_layout.addWidget(self.ambulance_tabs)
+
+        # 3. Add the Submit / Standby Buttons at the very bottom right
+        action_btn_layout = QHBoxLayout()
+        action_btn_layout.addStretch() # Pushes buttons all the way to the right
+        
+        self.btn_standby = QPushButton("Σε Αναμονή")
+        self.btn_standby.setFixedSize(100, 35)
+        
+        self.btn_send = QPushButton("ΑΠΟΣΤΟΛΗ")
+        self.btn_send.setFixedSize(100, 35)
+        
+        action_btn_layout.addWidget(self.btn_standby)
+        action_btn_layout.addWidget(self.btn_send)
+        
+        right_layout.addLayout(action_btn_layout)
+
+
 
 
         # ==========================================
