@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QComboBox, QPushButton, QMessageBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
     QCheckBox, QGridLayout, QRadioButton, QDateTimeEdit, QGroupBox,
-    QStackedWidget
+    QStackedWidget,QTextEdit,QScrollArea
 )
 from PyQt6.QtCore import Qt, QDateTime
 
@@ -116,8 +116,21 @@ class EKABTopRow(QWidget):
         self.setup_ui()
         
     def setup_ui(self):
-        main_layout = QVBoxLayout()
-        main_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+# 1. Create the master layout for the window
+        window_layout = QVBoxLayout(self)
+        window_layout.setContentsMargins(0, 0, 0, 0) # No borders around the scroll bar
+
+        # 2. Create the Scroll Area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True) # IMPORTANT: Lets the inner canvas expand!
+        scroll_area.setStyleSheet("QScrollArea { border: none; }")
+
+        # 3. Create the "Canvas" widget that will hold all your UI elements
+        scroll_content = QWidget()
+        
+        # 4. Bind your main_layout to the Canvas instead of the window
+        main_layout = QVBoxLayout(scroll_content)
+        main_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(12)
         
@@ -563,20 +576,88 @@ class EKABTopRow(QWidget):
         contact_group.setLayout(contact_grid)
         main_layout.addWidget(contact_group)
         
-        # ------------------------------------------
-        # --- FINALIZE LAYOUT (These should be your final lines of setup_ui) ---
-        # ------------------------------------------
-        # main_layout.addStretch()
-        # self.setLayout(main_layout)
-
+        # ==========================================
+        # SECTION: ΣΤΟΙΧΕΙΑ ΣΥΜΒΑΝΤΟΣ (Incident Details)
+        # ==========================================
+        incident_group = QGroupBox("ΣΤΟΙΧΕΙΑ ΣΥΜΒΑΝΤΟΣ")
+        incident_group.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        incident_group.setStyleSheet("QGroupBox { font-weight: bold; color: #333333; margin-top: 10px; }")
         
-        # ------------------------------------------
-        # --- FINALIZE LAYOUT (These should be your final 2 lines of setup_ui) ---
-        # ------------------------------------------
+        incident_grid = QGridLayout()
+        incident_grid.setContentsMargins(10, 10, 10, 10)
+        incident_grid.setSpacing(10)
+        incident_grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
-        # END OF SETUP_UI
-        main_layout.addStretch()
-        self.setLayout(main_layout)
+        # --- ROW 0: Checkboxes (Left) & Transport Label (Right) ---
+        
+        # We use a grid or individual placements inside the main incident_grid columns 
+        # so they pack tightly like a table row:
+        self.breath_check = QCheckBox("ΑΠΩΛΕΙΑ\nΑΝΑΠΝΟΗΣ")
+        self.senses_check = QCheckBox("ΑΠΩΛΕΙΑ\nΑΙΣΘΗΣΕΩΝ")
+        self.consciousness_check = QCheckBox("ΑΠΩΛΕΙΑ\nΣΥΝΕΙΔΗΣΗΣ")
+        self.bleeding_check = QCheckBox("ΕΧΕΙ\nΑΙΜΟΡΡΑΓΙΑ")
+
+        # Place each checkbox in its own sub-column right next to each other
+        chk_grid = QHBoxLayout()
+        chk_grid.setContentsMargins(0, 0, 0, 0)
+        chk_grid.setSpacing(2)  # Tight horizontal spacing
+        
+        chk_grid.addWidget(self.breath_check)
+        chk_grid.addWidget(self.senses_check)
+        chk_grid.addWidget(self.consciousness_check)
+        chk_grid.addWidget(self.bleeding_check)
+        chk_grid.addStretch()  # Pulls them all to the far left so they don't stretch apart
+
+# Note: Added '1, 2' at the end here so the checkboxes span across both columns!
+        incident_grid.addLayout(chk_grid, 0, 0, 1, 2) 
+
+        # --- ROW 1: Incident Type (Left) & Transport Label (Right) ---
+        incident_grid.addWidget(QLabel("*ΕΙΔΟΣ ΣΥΜΒΑΝΤΟΣ"), 1, 0, alignment=Qt.AlignmentFlag.AlignLeft)
+        incident_grid.addWidget(QLabel("ΤΡΟΠΟΣ ΜΕΤΑΦΟΡΑΣ"), 1, 1, alignment=Qt.AlignmentFlag.AlignLeft)
+        
+        # --- ROW 2: Dropdown and Input Box ---
+        self.incident_type_combo = QComboBox()
+        self.incident_type_combo.addItems(["", "ΑΣΘΕΝΕΙΑ", "ΤΡΟΧΑΙΟ", "ΕΡΓΑΤΙΚΟ ΑΤΥΧΗΜΑ", "ΑΛΛΟ ΑΤΥΧΗΜΑ"])
+        self.incident_type_combo.setFixedWidth(220)
+        incident_grid.addWidget(self.incident_type_combo, 2, 0, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        self.transport_input = QLineEdit()
+        self.transport_input.setMinimumHeight(30)
+        self.transport_input.setFixedWidth(300)
+        incident_grid.addWidget(self.transport_input, 2, 1, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # --- ROW 3: Symptoms & History Labels (Changed from 2 to 3) ---
+        incident_grid.addWidget(QLabel("ΣΥΜΠΤΩΜΑΤΑ"), 3, 0)
+        incident_grid.addWidget(QLabel("ΙΣΤΟΡΙΚΟ"), 3, 1)
+
+        # --- ROW 4: Symptoms & History Multi-line Text Boxes (Changed from 3 to 4) ---
+        self.symptoms_input = QTextEdit()
+        self.symptoms_input.setMaximumHeight(60)
+        incident_grid.addWidget(self.symptoms_input, 4, 0)
+
+        self.history_input = QTextEdit()
+        self.history_input.setMaximumHeight(60)
+        incident_grid.addWidget(self.history_input, 4, 1)
+
+        incident_grid.setColumnStretch(2, 1) 
+
+        # -> Apply grid to GroupBox and add to main layout
+        incident_group.setLayout(incident_grid)
+        main_layout.addWidget(incident_group)
+
+
+        # ==========================================
+        # FINALIZE SCROLL AREA & WINDOW LAYOUT
+        # ==========================================
+        main_layout.addStretch() # Pushes everything to the top of the canvas
+        
+        # Put the canvas inside the Scroll Area
+        scroll_area.setWidget(scroll_content)
+        
+        # Add the Scroll Area to the main window
+        window_layout.addWidget(scroll_area)
+        
+        # NOTE: We no longer need self.setLayout() because window_layout(self) handled it!
 
     def switch_pickup_view(self):
         """Changes the visible layout based on the selected radio button."""
