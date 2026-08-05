@@ -645,6 +645,95 @@ class EKABTopRow(QWidget):
         incident_group.setLayout(incident_grid)
         main_layout.addWidget(incident_group)
 
+# ==========================================
+        # SECTION: BOTTOM LEFT (Doctor, Response, Notes)
+        # ==========================================
+        
+        # --- ROW 1: Doctor & Cancel En Route ---
+        doc_layout = QHBoxLayout()
+        doc_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        doc_layout.addWidget(QLabel("ΙΑΤΡΟΣ ΚΕΝΤΡΟΥ"))
+        self.center_doctor_input = QLineEdit()
+        self.center_doctor_input.setFixedWidth(200)
+        doc_layout.addWidget(self.center_doctor_input)
+        
+        doc_layout.addSpacing(15)
+        
+        self.cancel_en_route_check = QCheckBox("ΑΚΥΡΟ ΚΑΘ' ΟΔΟΝ")
+        doc_layout.addWidget(self.cancel_en_route_check)
+        
+        self.cancel_reason_input = QLineEdit()
+        self.cancel_reason_input.setFixedWidth(180)
+        doc_layout.addWidget(self.cancel_reason_input)
+        
+        doc_layout.addStretch()
+        main_layout.addLayout(doc_layout)
+
+        # --- ROW 2: Response (Colored) & Validity ---
+        response_layout = QHBoxLayout()
+        response_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        # 2a. Antapokrisi (Response) Column
+        response_col = QVBoxLayout()
+        response_col.setContentsMargins(0, 0, 0, 0)
+        response_col.addWidget(QLabel("ΑΝΤΑΠΟΚΡΙΣΗ"))
+        
+        radios_layout = QHBoxLayout()
+        radios_layout.setSpacing(5)
+        
+        # Adding the specific background colors using CSS
+        self.resp_normal = QRadioButton("ΚΑΝΟΝΙΚΗ")
+        self.resp_normal.setStyleSheet("background-color: #8FBC8F; padding: 3px; border-radius: 4px; font-weight: bold;") # Green
+        
+        self.resp_urgent = QRadioButton("ΕΠΕΙΓΟΥΣΑ")
+        self.resp_urgent.setStyleSheet("background-color: #F4A460; padding: 3px; border-radius: 4px; font-weight: bold;") # Orange
+        
+        self.resp_inter = QRadioButton("ΔΙΑΝΟΣΟΚ.")
+        self.resp_inter.setStyleSheet("background-color: #9370DB; padding: 3px; border-radius: 4px; font-weight: bold;") # Purple
+        
+        self.resp_super = QRadioButton("ΥΠΕΡΕΠΕΙΓ.")
+        self.resp_super.setStyleSheet("background-color: #FA8072; padding: 3px; border-radius: 4px; font-weight: bold;") # Red
+        
+        radios_layout.addWidget(self.resp_normal)
+        radios_layout.addWidget(self.resp_urgent)
+        radios_layout.addWidget(self.resp_inter)
+        radios_layout.addWidget(self.resp_super)
+        
+        response_col.addLayout(radios_layout)
+        response_layout.addLayout(response_col)
+        
+        response_layout.addSpacing(30)
+        
+        # 2b. Egkyro (Valid) Column
+        valid_col = QVBoxLayout()
+        valid_col.setContentsMargins(0, 0, 0, 0)
+        valid_col.addWidget(QLabel("ΕΓΚΥΡΟ"))
+        
+        valid_radios_layout = QHBoxLayout()
+        self.valid_yes = QRadioButton("Ναι")
+        self.valid_no = QRadioButton("Όχι")
+        valid_radios_layout.addWidget(self.valid_yes)
+        valid_radios_layout.addWidget(self.valid_no)
+        
+        valid_col.addLayout(valid_radios_layout)
+        response_layout.addLayout(valid_col)
+        
+        response_layout.addStretch()
+        main_layout.addLayout(response_layout)
+
+        # --- ROW 3: Notes ---
+        notes_layout = QVBoxLayout()
+        notes_layout.setContentsMargins(0, 5, 0, 0)
+        notes_layout.addWidget(QLabel("ΣΗΜΕΙΩΣΕΙΣ"))
+        
+        self.notes_input = QTextEdit()
+        self.notes_input.setMaximumHeight(60)
+        self.notes_input.setFixedWidth(450)
+        notes_layout.addWidget(self.notes_input)
+        
+        main_layout.addLayout(notes_layout)
+
 
         # ==========================================
         # FINALIZE SCROLL AREA & WINDOW LAYOUT
