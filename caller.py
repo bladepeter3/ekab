@@ -172,11 +172,11 @@ class EKABTopRow(QWidget):
         grid.addWidget(QLabel("ΤΗΛΕΦΩΝΗΤΗΣ"), 0, 4)
         
         # ROW 1
-        self.card_input = QLineEdit("10")
-        self.date_input = QLineEdit("09/11/2019")
-        self.time_input = QLineEdit("14:50")
-        self.desk_input = QLineEdit("99")
-        self.operator_input = QLineEdit("ΓΙΑΝΝΕΚΑΣ ΓΕΩΡΓΙΟΣ")
+        self.card_input = QLineEdit()
+        self.date_input = QLineEdit()
+        self.time_input = QLineEdit()
+        self.desk_input = QLineEdit()
+        self.operator_input = QLineEdit()
     
         self.card_input.setMaximumWidth(95)
         self.date_input.setMaximumWidth(90)

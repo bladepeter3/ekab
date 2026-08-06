@@ -4,8 +4,10 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QTableWidget, 
     QTableWidgetItem, QHeaderView, QGroupBox, QSplitter
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt,QDateTime
 from PyQt6.QtGui import QColor, QBrush  # <--- ADD THIS LINE
+
+from caller import EKABTopRow
 
 class DispatcherDashboard(QWidget):
     def __init__(self):
@@ -33,6 +35,10 @@ class DispatcherDashboard(QWidget):
         
         self.btn_new = QPushButton("📝+\nΝέο")
         self.btn_new.setFixedSize(60, 60)
+
+        self.btn_new.clicked.connect(self.open_new_incident_form)
+
+        
         
         toolbar_layout.addWidget(self.btn_list)
         toolbar_layout.addWidget(self.btn_new)
@@ -193,6 +199,28 @@ class DispatcherDashboard(QWidget):
                         item.setBackground(QBrush(QColor("#1E90FF"))) # Bright Blue
                         
                 self.current_table.setItem(row_idx, col_idx, item)
+
+    def open_new_incident_form(self):
+        """Opens the New Incident form and stamps current time and position."""
+        # 1. Create the window
+        self.incident_window = EKABTopRow()
+        
+        # 2. Get exact current date and time
+        now = QDateTime.currentDateTime()
+        current_date = now.toString("dd/MM/yyyy")
+        current_time = now.toString("HH:mm")
+        
+        # 3. Inject Date and Time
+        self.incident_window.date_input.setText(current_date)
+        self.incident_window.time_input.setText(current_time)
+        
+        # 4. Inject the Position Number (if they logged in as ΤΗΛΕΦΩΝΗΤΗΣ)
+        if hasattr(self, 'shift_position') and self.shift_position:
+            self.incident_window.desk_input.setText(self.shift_position)
+            
+        # 5. Show the window
+        self.incident_window.show()
+
 
 # ==========================================
 # EXECUTE THE APP
