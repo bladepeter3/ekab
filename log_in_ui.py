@@ -174,9 +174,14 @@ class LoginWindow(QWidget):
                 self.log_user_login(user.name, user.last_name, selected_shift_role, position_number)
                 
                 self.dashboard = DispatcherDashboard()
+
+                # ---> NEW: Save credentials in memory for the lock screen! <---
+                self.dashboard.current_username = user.username
+                self.dashboard.current_password = user.password
                 
                 # ---> NEW: Save the position number directly inside the dashboard memory! <---
                 self.dashboard.shift_position = position_number
+
                 
                 # Update header to show the position if it exists
                 header_text = f"Χρήστης: {user.username} ({user.name} {user.last_name}), Θέση: {selected_shift_role}"

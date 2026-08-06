@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QDateTime,QObject, QEvent
 
 # --- SQLAlchemy Imports ---
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Date, Time
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Date, Time, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # ==========================================
@@ -31,14 +31,14 @@ class TimeFieldFilter(QObject):
             return True
         return super().eventFilter(obj, event)
 
-class DispatchCall(Base):
-    __tablename__ = 'dispatch_calls'
+class IncidentMixin:
     
     id = Column(Integer, primary_key=True)
     card_code = Column(Integer, default=0)
     datestamp = Column(Date, default=lambda: datetime.now().date())
     timestamp = Column(String(5), default=lambda: datetime.now().strftime("%H:%M"))
     position = Column(Integer, default=0)
+    operator_name = Column(String(100))
     emergency = Column(Boolean, default=False)
     from_address_check = Column(Boolean, default=True)
     from_medical_facility_check = Column(Boolean, default=False)
@@ -48,7 +48,7 @@ class DispatchCall(Base):
     visible_all_check= Column(Boolean, default=False)
     program_from = Column(String(16), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M"))
     filter_by_municipality = Column(Boolean, default=False)
-    address = Column(String(250), nullable=False)
+    address = Column(String(250))
     adress_num=Column(String(20))
     floor_num=Column(String(20))
     name_intercom=Column(String(50))
@@ -111,9 +111,11 @@ class DispatchCall(Base):
     approach_from_emt = Column(String(1000))
     notes_from_emt = Column(String(1000))
 
-engine = create_engine('sqlite:///emt_modern.db', echo=False)
-Base.metadata.create_all(engine)
-Session = sessionmaker(bind=engine)
+class SentIncident(IncidentMixin, Base):
+    __tablename__ = 'sent_incidents'
+
+class PendingIncident(IncidentMixin, Base):
+    __tablename__ = 'pending_incidents'
 
 # ==========================================
 # 2. GUI SETUP (PyQT6)
@@ -142,9 +144,9 @@ class EKABTopRow(QWidget):
         
         # 4. Master Horizontal Layout to hold Left and Right sides side-by-side
         master_layout = QHBoxLayout(scroll_content)
-        master_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        master_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         master_layout.setContentsMargins(10, 10, 10, 10)
-        master_layout.setSpacing(20)
+        master_layout.setSpacing(40) # Slightly increased spacing so they don't touch
 
         # 5. Left Side Layout (We keep the name 'main_layout' so your existing code works perfectly!)
         main_layout = QVBoxLayout()
@@ -159,6 +161,9 @@ class EKABTopRow(QWidget):
         # Add both columns to the master horizontal layout
         master_layout.addLayout(main_layout)
         master_layout.addLayout(right_layout)
+
+        # ---> ADD THIS MAGIC SPRING: It absorbs all extra screen space on the right! <---
+        master_layout.addStretch()
         
         grid = QGridLayout()
         grid.setSpacing(5) 
@@ -189,6 +194,9 @@ class EKABTopRow(QWidget):
         grid.addWidget(self.time_input, 1, 2) 
         grid.addWidget(self.desk_input, 1, 3)
         grid.addWidget(self.operator_input, 1, 4)
+
+        # ---> ADD THIS LINE: Pushes columns 0-4 tightly to the left! <---
+        grid.setColumnStretch(5, 1)
         
         main_layout.addLayout(grid)
 
@@ -1109,9 +1117,11 @@ class EKABTopRow(QWidget):
         
         self.btn_standby = QPushButton("Σε Αναμονή")
         self.btn_standby.setFixedSize(100, 35)
+        self.btn_standby.clicked.connect(self.save_as_pending)
         
         self.btn_send = QPushButton("ΑΠΟΣΤΟΛΗ")
         self.btn_send.setFixedSize(100, 35)
+        self.btn_send.clicked.connect(self.save_as_sent)
         
         action_btn_layout.addWidget(self.btn_standby)
         action_btn_layout.addWidget(self.btn_send)
@@ -1206,6 +1216,7 @@ class EKABTopRow(QWidget):
         
         # NOTE: We no longer need self.setLayout() because window_layout(self) handled it!
 
+
     def switch_pickup_view(self):
         """Changes the visible layout based on the selected radio button."""
         if self.radio_address.isChecked():
@@ -1216,6 +1227,154 @@ class EKABTopRow(QWidget):
             self.pickup_stack.setCurrentIndex(2) 
         elif self.radio_port_air.isChecked():
             self.pickup_stack.setCurrentIndex(3) 
+
+    def gather_form_data(self):
+        """Reads the data from the UI and returns it as a dictionary."""
+        try:
+            card_val = int(self.card_input.text()) if self.card_input.text() else 0
+            pos_val = int(self.desk_input.text()) if self.desk_input.text() else 0
+            age_val = int(self.age_input.text()) if self.age_input.text() else 0
+        except ValueError:
+            card_val, pos_val, age_val = 0, 0, 0
+
+        return {
+            "card_code": card_val,
+            "timestamp": self.time_input.text(),
+            "position": pos_val,
+            "operator_name": self.operator_input.text(),
+            "emergency": self.emergency_check.isChecked(),
+            "sector": self.sector_combo.currentText(),
+            "address": self.street_input.text(),
+            "adress_num": self.number_input.text(),
+            "municipality_region": self.municipality_combo.currentText(),
+            "patient_last_name": self.last_name_input.text(),
+            "patient_name": self.first_name_input.text(),
+            "patient_age": age_val,
+            "type_of_incident": self.incident_type_combo.currentText(),
+            "symptoms": self.symptoms_input.toPlainText()
+        }
+
+    def get_daily_session(self):
+        """Dynamically creates or connects to today's incident database."""
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        db_filename = f"sqlite:///incidents_{today_date}.db"
+        from sqlalchemy import create_engine
+        engine = create_engine(db_filename, echo=False)
+        Base.metadata.create_all(engine)
+        DailySession = sessionmaker(bind=engine)
+        return DailySession()
+
+    def initialize_empty_incident(self):
+        """Creates the initial blank entry in the DB and generates the Card Code."""
+        session = self.get_daily_session()
+        
+        # 1. Calculate the next Card Code (finds the highest code in both tables and adds 1)
+        max_pending = session.query(func.max(PendingIncident.card_code)).scalar() or 0
+        max_sent = session.query(func.max(SentIncident.card_code)).scalar() or 0
+        new_card_code = max(max_pending, max_sent) + 1
+        
+        # 2. Set it in the UI
+        self.card_input.setText(str(new_card_code))
+        
+        # 3. Save the blank record immediately to the pending table
+        pos_val = int(self.desk_input.text()) if self.desk_input.text() else 0
+        
+        new_incident = PendingIncident(
+            card_code=new_card_code,
+            timestamp=self.time_input.text(),
+            position=pos_val,
+            operator_name=self.operator_input.text()
+        )
+        
+        session.add(new_incident)
+        session.commit()
+        
+        # 4. Save the database ID so we can update it later instead of creating duplicates!
+        self.current_pending_id = new_incident.id
+        session.close()
+
+    def validate_for_send(self):
+        """Checks that all required fields on the left side are filled before sending."""
+        errors = []
+        
+        if not self.sector_combo.currentText().strip():
+            errors.append("Το πεδίο *ΤΟΜΕΑΣ είναι υποχρεωτικό.")
+            
+        if not self.incident_type_combo.currentText().strip():
+            errors.append("Το πεδίο *ΕΙΔΟΣ ΣΥΜΒΑΝΤΟΣ είναι υποχρεωτικό.")
+            
+        # Check dynamic pickup fields based on what is selected
+        idx = self.pickup_stack.currentIndex()
+        if idx == 0: # Δ/ΝΣΗ
+            if not self.street_input.text().strip(): errors.append("Το πεδίο *ΟΔΟΣ είναι υποχρεωτικό.")
+            if not self.municipality_combo.currentText().strip(): errors.append("Το πεδίο *ΔΗΜΟΣ/ΠΕΡΙΟΧΗ είναι υποχρεωτικό.")
+            if not self.exact_spot_input.text().strip(): errors.append("Το πεδίο *ΑΚΡΙΒΕΣ ΣΗΜΕΙΟ είναι υποχρεωτικό.")
+        elif idx == 1: # ΥΓΕΙΟΝ. ΣΧΗΜ.
+            if not self.health_org_combo.currentText().strip(): errors.append("Το πεδίο *ΥΓΕΙΟΝΟΜΙΚΟΣ ΣΧΗΜΑΤΙΣΜΟΣ είναι υποχρεωτικό.")
+        elif idx == 2: # Μ.Ε.Θ.
+            if not self.icu_combo.currentText().strip(): errors.append("Το πεδίο *ΥΓΕΙΟΝΟΜΙΚΟΣ ΣΧΗΜΑΤΙΣΜΟΣ είναι υποχρεωτικό.")
+        elif idx == 3: # ΛΙΜΑΝΙ/ΑΕΡΟΔΡΟΜΙΟ
+            if not self.port_org_combo.currentText().strip(): errors.append("Το πεδίο *ΛΙΜΑΝΙ/ΑΕΡΟΔΡΟΜΙΟ είναι υποχρεωτικό.")
+            if not self.port_arrival_combo.currentText().strip(): errors.append("Το πεδίο *ΑΦΙΞΗ ΑΠΟ είναι υποχρεωτικό.")
+            
+        # Check that at least one phone number is provided
+        phone_filled = any([
+            self.phone_1_input.text().strip(), 
+            self.phone_2_input.text().strip(), 
+            self.phone_3_input.text().strip()
+        ])
+        if not phone_filled:
+            errors.append("Πρέπει να συμπληρωθεί τουλάχιστον ένα ΤΗΛΕΦΩΝΟ.")
+            
+        # If there are errors, stop the process and warn the user
+        if errors:
+            QMessageBox.warning(self, "Ελλιπή Στοιχεία", "\n".join(errors))
+            return False
+            
+        return True
+
+    def save_as_pending(self):
+        """Updates the existing blank record with whatever is written so far."""
+        session = self.get_daily_session()
+        try:
+            # Find the record we created when the window first opened
+            incident = session.query(PendingIncident).filter_by(id=self.current_pending_id).first()
+            if incident:
+                data = self.gather_form_data()
+                for key, value in data.items():
+                    setattr(incident, key, value)
+                session.commit()
+                QMessageBox.information(self, "Επιτυχία", "Το περιστατικό ενημερώθηκε σε αναμονή!")
+                self.close() 
+        except Exception as e:
+            QMessageBox.critical(self, "Σφάλμα", f"Αδυναμία αποθήκευσης: {str(e)}")
+        finally:
+            session.close()
+
+    def save_as_sent(self):
+        """Validates, moves the record to the Sent table, and deletes the Pending placeholder."""
+        if not self.validate_for_send():
+            return # Stops the function if validation fails!
+            
+        session = self.get_daily_session()
+        try:
+            # 1. Add to SentIncident
+            data = self.gather_form_data()
+            new_sent_incident = SentIncident(**data)
+            session.add(new_sent_incident)
+            
+            # 2. Remove the old pending placeholder
+            old_pending = session.query(PendingIncident).filter_by(id=self.current_pending_id).first()
+            if old_pending:
+                session.delete(old_pending)
+                
+            session.commit()
+            QMessageBox.information(self, "Επιτυχία", "Το περιστατικό απεστάλη επιτυχώς!")
+            self.close() 
+        except Exception as e:
+            QMessageBox.critical(self, "Σφάλμα", f"Αδυναμία αποθήκευσης: {str(e)}")
+        finally:
+            session.close()
 
 # ==========================================
 # EXECUTE THE APP
