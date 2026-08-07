@@ -1,13 +1,17 @@
 import sys
+import webbrowser
+import urllib.parse
+import json
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QComboBox, QPushButton, QMessageBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
     QCheckBox, QGridLayout, QRadioButton, QDateTimeEdit, QGroupBox,
-    QStackedWidget,QTextEdit,QScrollArea
+    QStackedWidget,QTextEdit,QScrollArea,QCompleter
 )
-from PyQt6.QtCore import Qt, QDateTime,QObject, QEvent
+from PyQt6.QtCore import Qt, QDateTime,QObject, QEvent,QTimer,QUrl,QStringListModel
+from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 # --- SQLAlchemy Imports ---
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Date, Time, func
@@ -117,6 +121,9 @@ class SentIncident(IncidentMixin, Base):
 class PendingIncident(IncidentMixin, Base):
     __tablename__ = 'pending_incidents'
 
+class FinalizedIncident(IncidentMixin, Base):
+    __tablename__ = 'finalized_incidents'
+
 # ==========================================
 # 2. GUI SETUP (PyQT6)
 # ==========================================
@@ -128,7 +135,92 @@ class EKABTopRow(QWidget):
         self.resize(1600, 500)
         self.setMinimumSize(1400, 400)
         self.setup_ui()
+
+    def open_google_maps(self):
+        """Gathers the address fields and opens Google Maps in the web browser."""
+        street = self.street_input.text().strip()
+        number = self.number_input.text().strip()
+        municipality = self.municipality_combo.currentText().strip()
         
+        # Combine fields into a clean search query
+        query_parts = [street, number, municipality, "Ελλάδα"]
+        full_address = ", ".join([p for p in query_parts if p])
+        
+        if not full_address or full_address == "Ελλάδα":
+            QMessageBox.warning(self, "Προσοχή", "Συμπληρώστε τουλάχιστον την οδό ή τον δήμο για να ανοίξει ο χάρτης.")
+            return
+            
+        # Encode for URL and open Google Maps
+        encoded_query = urllib.parse.quote(full_address)
+        url = f"https://www.google.com/maps/search/?api=1&query={encoded_query}"
+        webbrowser.open(url)
+
+    def fetch_address_suggestions(self):
+        """Sends a query to fetch real-time address suggestions based on typed text."""
+        text = self.street_input.text().strip()
+        if len(text) < 3: # Only search if at least 3 characters are typed
+            return
+            
+        # Target Greece/Thessaloniki region
+        query = urllib.parse.quote(f"{text}, Θεσσαλονίκη, Ελλάδα")
+        url = f"https://nominatim.openstreetmap.org/search?q={query}&format=json&addressdetails=1&limit=5"
+        
+        request = QNetworkRequest(QUrl(url))
+        request.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "EKABDispatchApp/1.0")
+        self.network_manager.get(request)
+
+    def handle_address_suggestions(self, reply: QNetworkReply):
+        """Receives suggestions from the map service, extracts streets and municipalities."""
+        if reply.error() == QNetworkReply.NetworkError.NoError:
+            try:
+                data = json.loads(reply.readAll().data().decode('utf-8'))
+                suggestions = []
+                self.address_municipality_map.clear()
+                
+                for item in data:
+                    display_name = item.get('display_name', '')
+                    address_details = item.get('address', {})
+                    
+                    if display_name:
+                        street_name = display_name.split(',')[0].strip()
+                        suggestions.append(street_name)
+                        
+                        # Extract municipality, city, or suburb from the OpenStreetMap response
+                        muni = (
+                            address_details.get('municipality') or 
+                            address_details.get('city') or 
+                            address_details.get('town') or 
+                            address_details.get('suburb') or ""
+                        )
+                        
+                        # Store it in our map (converted to uppercase to match your combobox items)
+                        if muni:
+                            self.address_municipality_map[street_name] = muni.upper()
+                
+                self.completer_model.setStringList(list(set(suggestions)))
+                if suggestions:
+                    self.street_completer.complete()
+            except Exception:
+                pass
+        reply.deleteLater()
+
+    def on_address_selected(self, street_text):
+        """Automatically selects the corresponding municipality when a street is chosen."""
+        clean_street = street_text.strip()
+        if clean_street in self.address_municipality_map:
+            target_muni = self.address_municipality_map[clean_street]
+            
+            # Search inside your self.municipality_combo to see if the municipality exists there
+            match_index = self.municipality_combo.findText(target_muni, Qt.MatchFlag.MatchContains)
+            if match_index >= 0:
+                self.municipality_combo.setCurrentIndex(match_index)
+            else:
+                # If it's a municipality not currently in your static list, add it dynamically!
+                self.municipality_combo.addItem(target_muni)
+                self.municipality_combo.setCurrentText(target_muni)
+
+
+                
     def setup_ui(self):
 # 1. Create the master layout for the window
         window_layout = QVBoxLayout(self)
@@ -292,9 +384,33 @@ class EKABTopRow(QWidget):
         
         self.street_input = QLineEdit()
         self.street_input.setMaximumWidth(250)
+
+        # --- Live Address Search Setup ---
+        from PyQt6.QtWidgets import QCompleter
+        from PyQt6.QtCore import QStringListModel
+        
+        self.completer_model = QStringListModel([], self)
+        self.street_completer = QCompleter(self.completer_model, self)
+        self.street_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.street_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.street_input.setCompleter(self.street_completer)
+        
+        # Network manager for fetching addresses live
+        self.network_manager = QNetworkAccessManager(self)
+        self.network_manager.finished.connect(self.handle_address_suggestions)
+        
+        # Timer to avoid spamming the server on every single keystroke (waits 400ms after typing stops)
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(400)
+        self.search_timer.timeout.connect(self.fetch_address_suggestions)
+        
+        self.street_input.textChanged.connect(self.search_timer.start)
+
         addr_grid.addWidget(self.street_input, 1, 0)
         self.map_btn_1 = QPushButton("🗺️") 
         self.map_btn_1.setFixedWidth(30)
+        self.map_btn_1.clicked.connect(self.open_google_maps)
         addr_grid.addWidget(self.map_btn_1, 1, 1)
         self.number_input = QLineEdit()
         self.number_input.setFixedWidth(50)
@@ -1111,9 +1227,15 @@ class EKABTopRow(QWidget):
         # 2. Add the entire Tab Widget to the right layout
         right_layout.addWidget(self.ambulance_tabs)
 
-        # 3. Add the Submit / Standby Buttons at the very bottom right
+        # 3. Add the Submit / Standby / Terminate Buttons at the very bottom right
         action_btn_layout = QHBoxLayout()
         action_btn_layout.addStretch() # Pushes buttons all the way to the right
+        
+        # ---> NEW: Terminate Button <---
+        self.btn_terminate = QPushButton("ΤΕΡΜΑΤΙΣΜΟΣ")
+        self.btn_terminate.setFixedSize(110, 35)
+        self.btn_terminate.setStyleSheet("background-color: #D32F2F; color: white; font-weight: bold;")
+        self.btn_terminate.clicked.connect(self.terminate_incident)
         
         self.btn_standby = QPushButton("Σε Αναμονή")
         self.btn_standby.setFixedSize(100, 35)
@@ -1123,6 +1245,8 @@ class EKABTopRow(QWidget):
         self.btn_send.setFixedSize(100, 35)
         self.btn_send.clicked.connect(self.save_as_sent)
         
+        # Add them to the layout in order
+        action_btn_layout.addWidget(self.btn_terminate)
         action_btn_layout.addWidget(self.btn_standby)
         action_btn_layout.addWidget(self.btn_send)
         
@@ -1229,40 +1353,80 @@ class EKABTopRow(QWidget):
             self.pickup_stack.setCurrentIndex(3) 
 
     def gather_form_data(self):
-        """Reads the data from the UI and returns it as a dictionary."""
-        try:
-            card_val = int(self.card_input.text()) if self.card_input.text() else 0
-            pos_val = int(self.desk_input.text()) if self.desk_input.text() else 0
-            age_val = int(self.age_input.text()) if self.age_input.text() else 0
-        except ValueError:
-            card_val, pos_val, age_val = 0, 0, 0
+        """Scrapes all data from the UI elements and returns it as a dictionary."""
+        
+        # 1. Figure out which Priority (ΑΝΤΑΠΟΚΡΙΣΗ) radio button is checked
+        priority_level = ""
+        if hasattr(self, 'resp_normal') and self.resp_normal.isChecked():
+            priority_level = "ΚΑΝΟΝΙΚΗ"
+        elif hasattr(self, 'resp_urgent') and self.resp_urgent.isChecked():
+            priority_level = "ΕΠΕΙΓΟΥΣΑ"
+        elif hasattr(self, 'resp_super') and self.resp_super.isChecked():
+            priority_level = "ΥΠΕΡΕΠΕΙΓ."
+        elif hasattr(self, 'resp_inter') and self.resp_inter.isChecked():
+            priority_level = "ΔΙΑΝΟΣΟΚ."
 
-        return {
-            "card_code": card_val,
-            "timestamp": self.time_input.text(),
-            "position": pos_val,
-            "operator_name": self.operator_input.text(),
-            "emergency": self.emergency_check.isChecked(),
-            "sector": self.sector_combo.currentText(),
-            "address": self.street_input.text(),
-            "adress_num": self.number_input.text(),
-            "municipality_region": self.municipality_combo.currentText(),
-            "patient_last_name": self.last_name_input.text(),
-            "patient_name": self.first_name_input.text(),
-            "patient_age": age_val,
-            "type_of_incident": self.incident_type_combo.currentText(),
-            "symptoms": self.symptoms_input.toPlainText()
+        # 2. Gather all the data into a dictionary matching the database columns
+        data = {
+            "card_code": self.card_input.text() if hasattr(self, 'card_input') else "",
+            "timestamp": self.time_input.text() if hasattr(self, 'time_input') else "",
+            "position": self.desk_input.text() if hasattr(self, 'desk_input') else "",
+            "operator_name": self.operator_input.text() if hasattr(self, 'operator_input') else "",
+            
+            # Left Column Additions
+            "emergency": self.emergency_check.isChecked() if hasattr(self, 'emergency_check') else False,
+            "priority": priority_level,
+            "phone_1": self.phone_1_input.text() if hasattr(self, 'phone_1_input') else "",
+            "hospital_name": self.hospital_combo.currentText() if hasattr(self, 'hospital_combo') else "",
+            "ambulance_number": self.amb_code_combo.currentText() if hasattr(self, 'amb_code_combo') else "",
+            
+            # Comboboxes
+            "sector": self.sector_combo.currentText() if hasattr(self, 'sector_combo') else "",
+            "municipality_region": self.municipality_combo.currentText() if hasattr(self, 'municipality_combo') else "",
+            "type_of_incident": self.incident_type_combo.currentText() if hasattr(self, 'incident_type_combo') else "",
+            
+            # Right Column Text Fields
+            "address": self.street_input.text() if hasattr(self, 'street_input') else "",
+            "adress_num": self.number_input.text() if hasattr(self, 'number_input') else "",
+            "patient_last_name": self.last_name_input.text() if hasattr(self, 'last_name_input') else "",
+            "patient_name": self.first_name_input.text() if hasattr(self, 'first_name_input') else "",
+            
+            # Symptom Checkboxes
+            "loss_of_breath": self.breath_check.isChecked() if hasattr(self, 'breath_check') else False,
+            "loss_of_sensation": self.senses_check.isChecked() if hasattr(self, 'senses_check') else False,
+            "loss_of_consciousness": self.consciousness_check.isChecked() if hasattr(self, 'consciousness_check') else False,
+            "hemmorage": self.bleeding_check.isChecked() if hasattr(self, 'bleeding_check') else False,
+
+            # Ambulance Timestamps
+            "timestamp_dispatch": self.time_diavivasi.text() if hasattr(self, 'time_diavivasi') else "",
+            "timestamp_arrival_incident": self.time_afixi_sym.text() if hasattr(self, 'time_afixi_sym') else "",
+            "timestamp_leaving_incident": self.time_anaxorisi.text() if hasattr(self, 'time_anaxorisi') else "",
+            "timestamp_arrival_hospital": self.time_afixi_pro.text() if hasattr(self, 'time_afixi_pro') else "",
+            "timestamp_end": self.time_telos.text() if hasattr(self, 'time_telos') else "",
         }
+        
+        # Safely handle the Age (must be a number for the database)
+        if hasattr(self, 'age_input') and self.age_input.text().isdigit():
+            data["patient_age"] = int(self.age_input.text())
+            
+        # Safely handle Vital Signs dictionary
+        if hasattr(self, 'vital_inputs'):
+            if self.vital_inputs.get("BP") and self.vital_inputs["BP"].text().isdigit():
+                data["blood_pressure"] = int(self.vital_inputs["BP"].text())
+            if self.vital_inputs.get("HR") and self.vital_inputs["HR"].text().isdigit():
+                data["heart_rate"] = int(self.vital_inputs["HR"].text())
+            if self.vital_inputs.get("SpO2") and self.vital_inputs["SpO2"].text().isdigit():
+                data["spo2"] = int(self.vital_inputs["SpO2"].text())
+            if self.vital_inputs.get("AVPU"):
+                data["avpu"] = self.vital_inputs["AVPU"].text()
+            if self.vital_inputs.get("SMS"):
+                data["sms"] = self.vital_inputs["SMS"].text()
 
-    def get_daily_session(self):
-        """Dynamically creates or connects to today's incident database."""
-        today_date = datetime.now().strftime("%Y-%m-%d")
-        db_filename = f"sqlite:///incidents_{today_date}.db"
-        from sqlalchemy import create_engine
-        engine = create_engine(db_filename, echo=False)
-        Base.metadata.create_all(engine)
-        DailySession = sessionmaker(bind=engine)
-        return DailySession()
+        # Safely handle Symptoms (QTextEdit)
+        if hasattr(self, 'symptoms_input'):
+            data["symptoms"] = self.symptoms_input.toPlainText()
+                
+        return data
 
     def initialize_empty_incident(self):
         """Creates the initial blank entry in the DB and generates the Card Code."""
@@ -1292,6 +1456,107 @@ class EKABTopRow(QWidget):
         # 4. Save the database ID so we can update it later instead of creating duplicates!
         self.current_pending_id = new_incident.id
         session.close()
+
+    def get_daily_session(self):
+        """Dynamically creates or connects to today's incident database."""
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        db_filename = f"sqlite:///incidents_{today_date}.db"
+        from sqlalchemy import create_engine
+        engine = create_engine(db_filename, echo=False)
+        Base.metadata.create_all(engine)
+        DailySession = sessionmaker(bind=engine)
+        return DailySession()
+
+
+    def load_incident(self, incident_id, is_pending):
+        """Loads an existing incident from the database and fills the UI."""
+        session = self.get_daily_session()
+        
+        try:
+            # 1. Fetch the correct record based on the table clicked
+            if is_pending:
+                incident = session.query(PendingIncident).filter_by(id=int(incident_id)).first()
+                self.current_pending_id = incident.id
+                self.is_editing_sent = False 
+            else:
+                incident = session.query(SentIncident).filter_by(id=int(incident_id)).first()
+                self.current_sent_id = incident.id
+                self.is_editing_sent = True 
+                
+            if not incident:
+                QMessageBox.warning(self, "Σφάλμα", "Το περιστατικό δεν βρέθηκε στη βάση.")
+                return
+
+            # 2. Populate the Top row
+            if hasattr(self, 'card_input'): self.card_input.setText(str(incident.card_code) if incident.card_code else "")
+            if hasattr(self, 'time_input') and incident.timestamp: self.time_input.setText(incident.timestamp)
+            if hasattr(self, 'desk_input') and incident.position: self.desk_input.setText(str(incident.position))
+            
+            # 3. Populate Left Side (Checkboxes & Radio Buttons)
+            if hasattr(self, 'emergency_check'): self.emergency_check.setChecked(bool(incident.emergency))
+            
+            if incident.priority == "ΚΑΝΟΝΙΚΗ" and hasattr(self, 'resp_normal'):
+                self.resp_normal.setChecked(True)
+            elif incident.priority == "ΕΠΕΙΓΟΥΣΑ" and hasattr(self, 'resp_urgent'):
+                self.resp_urgent.setChecked(True)
+            elif incident.priority == "ΥΠΕΡΕΠΕΙΓ." and hasattr(self, 'resp_super'):
+                self.resp_super.setChecked(True)
+            elif incident.priority == "ΔΙΑΝΟΣΟΚ." and hasattr(self, 'resp_inter'):
+                self.resp_inter.setChecked(True)
+
+            # 4. Populate Symptom Checkboxes
+            if hasattr(self, 'breath_check'): self.breath_check.setChecked(bool(incident.loss_of_breath))
+            if hasattr(self, 'senses_check'): self.senses_check.setChecked(bool(incident.loss_of_sensation))
+            if hasattr(self, 'consciousness_check'): self.consciousness_check.setChecked(bool(incident.loss_of_consciousness))
+            if hasattr(self, 'bleeding_check'): self.bleeding_check.setChecked(bool(incident.hemmorage))
+
+            # 5. Populate Ambulance Timestamps
+            if hasattr(self, 'time_diavivasi') and incident.timestamp_dispatch: self.time_diavivasi.setText(incident.timestamp_dispatch)
+            if hasattr(self, 'time_afixi_sym') and incident.timestamp_arrival_incident: self.time_afixi_sym.setText(incident.timestamp_arrival_incident)
+            if hasattr(self, 'time_anaxorisi') and incident.timestamp_leaving_incident: self.time_anaxorisi.setText(incident.timestamp_leaving_incident)
+            if hasattr(self, 'time_afixi_pro') and incident.timestamp_arrival_hospital: self.time_afixi_pro.setText(incident.timestamp_arrival_hospital)
+            if hasattr(self, 'time_telos') and incident.timestamp_end: self.time_telos.setText(incident.timestamp_end)
+
+            # 6. Populate Vitals
+            if hasattr(self, 'vital_inputs'):
+                if self.vital_inputs.get("BP") and incident.blood_pressure: self.vital_inputs["BP"].setText(str(incident.blood_pressure))
+                if self.vital_inputs.get("HR") and incident.heart_rate: self.vital_inputs["HR"].setText(str(incident.heart_rate))
+                if self.vital_inputs.get("SpO2") and incident.spo2: self.vital_inputs["SpO2"].setText(str(incident.spo2))
+                if self.vital_inputs.get("AVPU") and incident.avpu: self.vital_inputs["AVPU"].setText(incident.avpu)
+                if self.vital_inputs.get("SMS") and incident.sms: self.vital_inputs["SMS"].setText(incident.sms)
+
+            # 7. Populate Text & Combos
+            if hasattr(self, 'phone_1_input') and incident.phone_1: self.phone_1_input.setText(incident.phone_1)
+            
+            if hasattr(self, 'amb_code_combo') and incident.ambulance_number: 
+                if self.amb_code_combo.findText(incident.ambulance_number) == -1:
+                    self.amb_code_combo.addItem(incident.ambulance_number)
+                self.amb_code_combo.setCurrentText(incident.ambulance_number)
+                
+            if hasattr(self, 'hospital_combo') and incident.hospital_name: 
+                if self.hospital_combo.findText(incident.hospital_name) == -1:
+                    self.hospital_combo.addItem(incident.hospital_name)
+                self.hospital_combo.setCurrentText(incident.hospital_name)
+            
+            if hasattr(self, 'sector_combo') and incident.sector: self.sector_combo.setCurrentText(incident.sector)
+            if hasattr(self, 'municipality_combo') and incident.municipality_region: self.municipality_combo.setCurrentText(incident.municipality_region)
+            if hasattr(self, 'incident_type_combo') and incident.type_of_incident: self.incident_type_combo.setCurrentText(incident.type_of_incident)
+            
+            if hasattr(self, 'street_input') and incident.address: self.street_input.setText(incident.address)
+            if hasattr(self, 'number_input') and incident.adress_num: self.number_input.setText(incident.adress_num)
+            if hasattr(self, 'last_name_input') and incident.patient_last_name: self.last_name_input.setText(incident.patient_last_name)
+            if hasattr(self, 'first_name_input') and incident.patient_name: self.first_name_input.setText(incident.patient_name)
+            if hasattr(self, 'age_input') and incident.patient_age: self.age_input.setText(str(incident.patient_age))
+            
+            if hasattr(self, 'symptoms_input') and incident.symptoms: 
+                self.symptoms_input.setPlainText(incident.symptoms)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Σφάλμα", f"Αδυναμία φόρτωσης: {str(e)}")
+        finally:
+            session.close()
+
+
 
     def validate_for_send(self):
         """Checks that all required fields on the left side are filled before sending."""
@@ -1334,47 +1599,102 @@ class EKABTopRow(QWidget):
         return True
 
     def save_as_pending(self):
-        """Updates the existing blank record with whatever is written so far."""
+        """Updates the existing record with whatever is written so far."""
         session = self.get_daily_session()
         try:
-            # Find the record we created when the window first opened
-            incident = session.query(PendingIncident).filter_by(id=self.current_pending_id).first()
-            if incident:
-                data = self.gather_form_data()
-                for key, value in data.items():
-                    setattr(incident, key, value)
-                session.commit()
-                QMessageBox.information(self, "Επιτυχία", "Το περιστατικό ενημερώθηκε σε αναμονή!")
-                self.close() 
+            data = self.gather_form_data()
+            
+            # Prevent a sent incident from being reverted to pending by mistake
+            if hasattr(self, 'is_editing_sent') and self.is_editing_sent:
+                QMessageBox.warning(self, "Προσοχή", "Το περιστατικό έχει ήδη αποσταλεί. Πατήστε 'ΑΠΟΣΤΟΛΗ' για να αποθηκεύσετε τις αλλαγές.")
+                return
+
+            if hasattr(self, 'current_pending_id'):
+                incident = session.query(PendingIncident).filter_by(id=self.current_pending_id).first()
+                if incident:
+                    for key, value in data.items():
+                        setattr(incident, key, value)
+                    session.commit()
+                    QMessageBox.information(self, "Επιτυχία", "Το περιστατικό ενημερώθηκε σε αναμονή!")
+                    self.close() 
         except Exception as e:
             QMessageBox.critical(self, "Σφάλμα", f"Αδυναμία αποθήκευσης: {str(e)}")
         finally:
             session.close()
 
     def save_as_sent(self):
-        """Validates, moves the record to the Sent table, and deletes the Pending placeholder."""
+        """Validates and saves. Updates if already sent, moves it if pending."""
         if not self.validate_for_send():
-            return # Stops the function if validation fails!
+            return 
             
         session = self.get_daily_session()
         try:
-            # 1. Add to SentIncident
             data = self.gather_form_data()
-            new_sent_incident = SentIncident(**data)
-            session.add(new_sent_incident)
             
-            # 2. Remove the old pending placeholder
-            old_pending = session.query(PendingIncident).filter_by(id=self.current_pending_id).first()
-            if old_pending:
-                session.delete(old_pending)
+            # If we opened a Running/Sent incident, just update it
+            if hasattr(self, 'is_editing_sent') and self.is_editing_sent:
+                incident = session.query(SentIncident).filter_by(id=self.current_sent_id).first()
+                if incident:
+                    for key, value in data.items():
+                        setattr(incident, key, value)
+            
+            # If we opened a Pending incident (or it's brand new), move it to Sent
+            else:
+                new_sent_incident = SentIncident(**data)
+                session.add(new_sent_incident)
+                
+                if hasattr(self, 'current_pending_id'):
+                    old_pending = session.query(PendingIncident).filter_by(id=self.current_pending_id).first()
+                    if old_pending:
+                        session.delete(old_pending)
                 
             session.commit()
-            QMessageBox.information(self, "Επιτυχία", "Το περιστατικό απεστάλη επιτυχώς!")
+            QMessageBox.information(self, "Επιτυχία", "Το περιστατικό αποθηκεύτηκε/απεστάλη επιτυχώς!")
             self.close() 
         except Exception as e:
             QMessageBox.critical(self, "Σφάλμα", f"Αδυναμία αποθήκευσης: {str(e)}")
         finally:
             session.close()
+
+    def terminate_incident(self):
+        """Moves the incident to the Finalized table, then removes it from active tables."""
+        reply = QMessageBox.question(
+            self, 
+            "Τερματισμός Περιστατικού", 
+            "Είστε σίγουροι ότι θέλετε να κλείσετε οριστικά αυτό το περιστατικό;\n\nΘα μεταφερθεί στο Ιστορικό.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            session = self.get_daily_session()
+            try:
+                # 1. Gather current data and create a Finalized record
+                data = self.gather_form_data()
+                final_incident = FinalizedIncident(**data)
+                session.add(final_incident)
+
+                # 2. Delete from Pending (if it exists there)
+                if hasattr(self, 'current_pending_id'):
+                    pending = session.query(PendingIncident).filter_by(id=self.current_pending_id).first()
+                    if pending:
+                        session.delete(pending)
+                        
+                # 3. Delete from Sent (if it exists there)
+                if hasattr(self, 'current_sent_id'):
+                    sent = session.query(SentIncident).filter_by(id=self.current_sent_id).first()
+                    if sent:
+                        session.delete(sent)
+                        
+                session.commit()
+                QMessageBox.information(self, "Τερματισμός", "Το περιστατικό μεταφέρθηκε στο ιστορικό επιτυχώς.")
+                self.close() 
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Σφάλμα", f"Αδυναμία τερματισμού: {str(e)}")
+            finally:
+                session.close()
+
 
 # ==========================================
 # EXECUTE THE APP

@@ -8,6 +8,7 @@ from PyQt6.QtCore import Qt,QDateTime,QTimer
 from PyQt6.QtGui import QColor, QBrush  # <--- ADD THIS LINE
 
 from caller import EKABTopRow
+from history_ui import IncidentListWindow
 import sqlite3
 import os
 from datetime import datetime
@@ -71,7 +72,7 @@ class DispatcherDashboard(QWidget):
         # ---> NEW: AUTO-REFRESH TIMER <---
         # ==========================================
         self.refresh_timer = QTimer(self)
-        self.refresh_timer.timeout.connect(self.load_pending_incidents)
+        self.refresh_timer.timeout.connect(self.refresh_all_tables)
         self.refresh_timer.start(5000) # 5000 milliseconds = 5 seconds
         
     def setup_ui(self):
@@ -89,6 +90,7 @@ class DispatcherDashboard(QWidget):
         # Action Buttons (Left)
         self.btn_list = QPushButton("📄\nΛίστα")
         self.btn_list.setFixedSize(60, 60)
+        self.btn_list.clicked.connect(self.open_list_window)
         
         self.btn_new = QPushButton("📝+\nΝέο")
         self.btn_new.setFixedSize(60, 60)
@@ -97,14 +99,13 @@ class DispatcherDashboard(QWidget):
         # ---> NEW: Refresh Button <---
         self.btn_refresh = QPushButton("🔄\nΑνανέωση")
         self.btn_refresh.setFixedSize(70, 60)
-        self.btn_refresh.clicked.connect(self.load_pending_incidents)
+        self.btn_refresh.clicked.connect(self.refresh_all_tables)
         
         toolbar_layout.addWidget(self.btn_list)
         toolbar_layout.addWidget(self.btn_new)
         toolbar_layout.addWidget(self.btn_refresh) # Add to the screen
         toolbar_layout.addSpacing(20)
 
-        self.btn_new.clicked.connect(self.open_new_incident_form)
 
         
         
@@ -165,6 +166,7 @@ class DispatcherDashboard(QWidget):
         
         self.current_table = QTableWidget()
         self.setup_current_table()
+        self.current_table.cellDoubleClicked.connect(self.open_current_incident)
         
         # ---> ADD THIS LINE HERE <---
         #self.populate_dummy_data()
@@ -185,6 +187,7 @@ class DispatcherDashboard(QWidget):
         self.pending_table = QTableWidget()
         self.setup_pending_table()
         bottom_layout.addWidget(self.pending_table)
+        self.pending_table.cellDoubleClicked.connect(self.open_pending_incident)
         
         splitter.addWidget(bottom_widget)
         
@@ -193,8 +196,8 @@ class DispatcherDashboard(QWidget):
 
         main_layout.addWidget(splitter)
 
-        # Automatically load pending incidents on startup
-        self.load_pending_incidents()
+        # Automatically load all incidents on startup
+        self.refresh_all_tables()
 
     def setup_current_table(self):
         """Configures the columns and style for the Current Incidents table."""
@@ -295,6 +298,35 @@ class DispatcherDashboard(QWidget):
         
         self.incident_window.show()
 
+    def open_pending_incident(self, row, column):
+        """Triggered when double-clicking a row in the pending table."""
+        item = self.pending_table.item(row, 0) # 0 is the A/A (ID) column
+        if item and item.text():
+            self.open_existing_incident_form(item.text(), is_pending=True)
+
+    def open_current_incident(self, row, column):
+        """Triggered when double-clicking a row in the current table."""
+        item = self.current_table.item(row, 0)
+        if item and item.text():
+            self.open_existing_incident_form(item.text(), is_pending=False)
+
+    def open_existing_incident_form(self, incident_id, is_pending):
+        """Opens the caller window and loads the existing data."""
+        self.incident_window = EKABTopRow()
+        
+        # Inject Operator Username (We don't inject the time because it's an old record)
+        if hasattr(self, 'current_username') and self.current_username:
+            self.incident_window.operator_input.setText(self.current_username)
+            
+        # Call the new load function to pull data from the DB!
+        self.incident_window.load_incident(incident_id, is_pending)
+        self.incident_window.show()
+
+    def open_list_window(self):
+        """Opens the Finalized Incidents History window."""
+        self.list_window = IncidentListWindow()
+        self.list_window.show()
+
     def lock_system(self):
         """Pops up the lock screen overlay."""
         dialog = UnlockDialog(self)
@@ -375,6 +407,80 @@ class DispatcherDashboard(QWidget):
                     
         except sqlite3.OperationalError:
             # If the database exists but the table isn't created yet, quietly pass
+            pass
+        finally:
+            conn.close()
+
+    def refresh_all_tables(self):
+        """Fetches fresh data for both pending and current tables simultaneously."""
+        self.load_pending_incidents()
+        self.load_current_incidents()
+
+    def load_current_incidents(self):
+        """Loads sent incidents from today's database into the top table."""
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        db_filename = f"incidents_{today_date}.db"
+        
+        if not os.path.exists(db_filename):
+            return 
+            
+        conn = sqlite3.connect(db_filename)
+        cursor = conn.cursor()
+        
+        try:
+            # We select the columns matching the top table headers
+            cursor.execute("""
+                SELECT id, card_code, emergency, priority, timestamp, 
+                       ambulance_number, type_of_incident, municipality_region, 
+                       address, adress_num, hospital_name, patient_last_name, 
+                       patient_name, symptoms 
+                FROM sent_incidents
+            """)
+            rows = cursor.fetchall()
+            
+            self.current_table.setRowCount(0) 
+            
+            for row_idx, row_data in enumerate(rows):
+                self.current_table.insertRow(row_idx)
+                
+                # Format the "Emergency" boolean into NAI/OXI
+                is_emergency = "ΝΑΙ" if row_data[2] else "ΟΧΙ"
+                
+                # Map SQLite row exactly to the top Table headers:
+                table_data = [
+                    str(row_data[0]),                                  # A/A
+                    str(row_data[1] if row_data[1] else ""),           # Κωδ. Κάρτας
+                    is_emergency,                                      # Επείγον
+                    str(row_data[3] if row_data[3] else ""),           # Ανταπόκριση
+                    "Ενεργό",                                          # Κατάσταση (Default label for sent)
+                    str(row_data[4] if row_data[4] else ""),           # Ημ/Ώρα
+                    str(row_data[5] if row_data[5] else ""),           # Ασθενοφόρο
+                    str(row_data[6] if row_data[6] else ""),           # Είδος Συμβάντος
+                    str(row_data[7] if row_data[7] else ""),           # Δήμος
+                    str(row_data[8] if row_data[8] else ""),           # Διεύθυνση
+                    str(row_data[9] if row_data[9] else ""),           # Αριθμός
+                    str(row_data[10] if row_data[10] else ""),         # Νοσοκομείο
+                    str(row_data[11] if row_data[11] else ""),         # Επώνυμο
+                    str(row_data[12] if row_data[12] else ""),         # Όνομα
+                    str(row_data[13] if row_data[13] else "")          # Σημειώσεις
+                ]
+                
+                for col_idx, text in enumerate(table_data):
+                    item = QTableWidgetItem(text)
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    
+                    # Apply color coding to the "Ανταπόκριση" column just like the original dummy data!
+                    if col_idx == 3:
+                        if text == "ΚΑΝΟΝΙΚΗ":
+                            item.setBackground(QBrush(QColor("#8FBC8F")))
+                        elif text == "ΕΠΕΙΓΟΥΣΑ":
+                            item.setBackground(QBrush(QColor("#F4A460")))
+                        elif text == "ΥΠΕΡΕΠΕΙΓ.":
+                            item.setBackground(QBrush(QColor("#1E90FF")))
+                            
+                    self.current_table.setItem(row_idx, col_idx, item)
+                    
+        except sqlite3.OperationalError:
             pass
         finally:
             conn.close()
